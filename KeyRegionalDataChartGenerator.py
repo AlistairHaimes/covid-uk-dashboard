@@ -80,6 +80,7 @@ def call_gov_api(callname: str, filters: list, structure: dict) -> pd.DataFrame:
     # df.to_csv(f'{areaName}Healthcare.csv')
     return df
 
+
 # deaths
 def fetch_deaths_data():
     deaths_query = {
@@ -125,7 +126,6 @@ def fetch_healthcare_data(areaName: str) -> pd.DataFrame:
         }
     return call_gov_api(callname=f'healthcare ({areaName})', 
         filters=areas[areaName], structure=healthcare_query)
-
 
 def make_healthcare_data():
     healthcare_dfs = pd.concat(
