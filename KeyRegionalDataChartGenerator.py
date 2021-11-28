@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 # coding: utf-8
 
-import pandas as pd
-import numpy as np
+from datetime import datetime, date, timedelta # for zoe string
 
-import seaborn as sns
+import pandas as pd
 import matplotlib as mpl # for formatting log y axis
 from matplotlib.dates import MonthLocator # for formatting x axis 
 import matplotlib.dates as mdates # for formatting x axis
 import matplotlib.pyplot as plt
-
-
-from datetime import datetime, date, timedelta # for zoe string
+import numpy as np
+import seaborn as sns
 
 from uk_covid19 import Cov19API
 
@@ -192,7 +190,6 @@ u60, o60, cases = process_cases_data( fetch_cases_data() )
 
 
 # create charts
-
 
 regions = list(admissions.columns.unique())
 regions.remove('England')
