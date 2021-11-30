@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # coding: utf-8
 
-from datetime import datetime, date, timedelta # for zoe string
+from datetime import datetime, date, timedelta
 
 import pandas as pd
 import matplotlib as mpl # for formatting log y axis
@@ -13,12 +13,11 @@ import seaborn as sns
 
 from uk_covid19 import Cov19API
 
-
 # slice to 1st wave, say 1st March
-start_w1 = '2020-03-01'
+START = '2020-03-01'
 
 # chart preferences
-sns.set_style("ticks") # darkgrid looks nice too
+sns.set_style("ticks")
 sns.set_color_codes("dark")
 mpl.use('Agg') # so can save without displaying
 
@@ -63,11 +62,9 @@ def process_Zoe(raw_zoe: pd.DataFrame) -> pd.DataFrame:
     else:
         raise ValueError("no Zoe DataFrame, presume problem at GCS")
 
-zoe = process_Zoe( fetch_zoe_data() )
-
 
 def call_gov_api(callname: str, filters: list, structure: dict) -> pd.DataFrame:
-    '''helper function for api call to UK govt covid19 api'''
+    '''helper function for api calls to UK govt covid19 api'''
     api = Cov19API(
         filters=filters, 
         structure=structure,
@@ -94,11 +91,12 @@ def fetch_deaths_data():
     return deaths
 
 def process_deaths_data(deaths: pd.DataFrame) -> pd.DataFrame:
-    ney = deaths[(deaths.region=='North East') | (deaths.region=='Yorkshire and The Humber')].groupby('date').sum()
-    midlands = deaths[(deaths.region=='East Midlands') | (deaths.region=='West Midlands')].groupby('date').sum()
-    to_add1, to_add2 = pd.DataFrame(ney), pd.DataFrame(midlands)
-    to_add1['region'], to_add2['region'] ='North East and Yorkshire', 'Midlands'
-    deaths = deaths.set_index('date').append([to_add1, to_add2])
+    ney = deaths[(deaths.region=='North East') | (
+        deaths.region=='Yorkshire and The Humber')].groupby('date').sum()
+    midlands = deaths[(deaths.region=='East Midlands') | (
+        deaths.region=='West Midlands')].groupby('date').sum()
+    ney['region'], midlands['region'] ='North East and Yorkshire', 'Midlands'
+    deaths = deaths.set_index('date').append([ney, midlands])
     england = deaths.groupby('date').sum().reset_index()
     england['region'] = 'England'
     deaths = pd.concat([deaths.reset_index(), england])
@@ -107,8 +105,6 @@ def process_deaths_data(deaths: pd.DataFrame) -> pd.DataFrame:
     # exclude final 3 days as figures will be updated
     deaths = deaths.iloc[:-3]
     return deaths
-
-deaths = process_deaths_data( fetch_deaths_data() )
 
 
 # Hospital data
@@ -138,26 +134,18 @@ def make_healthcare_data():
         index='date', columns='region', values='hospitalCases')
     return admissions, inpatients
 
-admissions, inpatients = make_healthcare_data()
-
-# if you want to save a csv of each dataset, uncomment the below:
-# admissions.to_csv('admissions.csv')
-# inpatients.to_csv('inpatients.csv')
-
 
 # Cases
 def fetch_cases_data():
     cases_query = {
-            'metric':'newCasesBySpecimenDateAgeDemographics',
-            'region': 'areaName',
-            'date':'date',
-            }
-    cases_dataframe = call_gov_api(callname='cases', filters=['areaType=region'], 
-        structure=cases_query)
-    return cases_dataframe
+        'metric':'newCasesBySpecimenDateAgeDemographics',
+        'region': 'areaName',
+        'date':'date'}
+    cases_dataframe = call_gov_api(callname='cases', 
+        filters=['areaType=region'], structure=cases_query)
+    return cases_dataframe.explode('metric')
 
 def process_cases_data(cases_dataframe: pd.DataFrame) -> pd.DataFrame:
-    cases_dataframe=cases_dataframe.explode('metric')
     cases_dataframe['age']=cases_dataframe['metric'].apply(lambda x:x['age'])
     cases_dataframe['cases']=cases_dataframe['metric'].apply(lambda x:x['cases'])
     cases_dataframe.date = pd.to_datetime(cases_dataframe.date)
@@ -177,42 +165,28 @@ def process_cases_data(cases_dataframe: pd.DataFrame) -> pd.DataFrame:
         ['date', 'age']).sum().reset_index().set_index('date')
     ney['region']='North East and Yorkshire'
     cases_dataframe = pd.concat([cases_dataframe, ney, midlands])
-    to_drop = ['North East', 'Yorkshire and The Humber', 'East Midlands', 'West Midlands']
-    
-    for to_drop_region in to_drop:
-        cases_dataframe = cases_dataframe[cases_dataframe.region!=to_drop_region]
-    u60 = cases_dataframe[cases_dataframe.age=='00_59'].pivot_table(index='date', columns='region').cases
-    o60 = cases_dataframe[cases_dataframe.age=='60+'].pivot_table(index='date', columns='region').cases
+    u60 = cases_dataframe[cases_dataframe.age=='00_59'].pivot_table(
+        index='date', columns='region').cases
+    o60 = cases_dataframe[cases_dataframe.age=='60+'].pivot_table(
+        index='date', columns='region').cases
     cases = u60 + o60
     return u60, o60, cases
 
-u60, o60, cases = process_cases_data( fetch_cases_data() )
+
+def aggreg(datasets: dict) -> pd.DataFrame:
+    """Build a single dataframe from dict of passed dataframes"""
+    df = pd.concat(
+        datasets.values(), keys=datasets.keys(), join='outer', axis=1)
+    return df
 
 
-# create charts
-
-regions = list(admissions.columns.unique())
-regions.remove('England')
-regions.insert(0, 'England')
-
-# make a big dataFrame with all the ones to plot in
-to_plot = pd.concat([zoe, admissions, inpatients, o60, cases, deaths],
-    keys=['zoe', 'admissions', 'inpatients', 'cases 60+', 'cases', 'deaths'],
-    axis=1,
-    join='outer')
-# uncomment if you want to save a csv table of all datasets 
-# to_plot.to_csv('melted.csv')
-
-
-def format_ax(ax: plt.subplot, region: str) -> plt.subplot:
+def format_ax(ax: plt.subplot, region: str, lgnd_labels: list) -> plt.subplot:
     """common formatting for all charts"""
-    legendLabels = ['Zoe new infections','Admissions', 'Inpatients', 
-        'Cases >60', 'Cases', 'Deaths']
-    yticksLog=[1,10,100,1000,10000] # for log y-scale
+    yticksLog = [1,10,100,1000,10000] # for log y-scale
     handles, labels = ax.get_legend_handles_labels()
     ax.legend(
         handles=handles, 
-        labels=legendLabels, 
+        labels=lgnd_labels, 
         title='', 
         loc='upper left',
         facecolor='white')
@@ -232,65 +206,84 @@ def format_ax(ax: plt.subplot, region: str) -> plt.subplot:
     return ax
 
 
-def individual_charts():
-    for counter, region in enumerate(regions):
+def line(data, ax, linewidth):
+    l = sns.lineplot(
+        data=data, 
+        x="date", 
+        y="value", 
+        ax=ax, 
+        linewidth=linewidth, 
+        hue="variable")
+    return l
+
+def individual_charts(to_plot, regions):
+    for region in regions:
         fig, ax = plt.subplots(figsize=(12, 7))
-        sns.lineplot(
-            data=to_plot[~(to_plot.index < start_w1)].swaplevel(axis=1)[region].reset_index().melt(id_vars=['date']), 
-            x="date",
-            y="value",
+        line(
+            data=to_plot[~(to_plot.index < START)].swaplevel(axis=1)[
+                region].reset_index().melt(id_vars=['date']), 
             ax=ax, 
-            linewidth=0.5,
-            hue="variable")
-        sns.lineplot(
-            data=to_plot.rolling(window=7).mean()[~(to_plot.index < start_w1)].swaplevel(axis=1)[region].reset_index().melt(id_vars=['date']),
-            x="date",
-            y="value",
+            linewidth=0.5)
+        line(
+            data=to_plot.rolling(window=7).mean()[~(
+                to_plot.index < START)].swaplevel(axis=1)[region].reset_index(
+                ).melt(id_vars=['date']),
             ax=ax,
-            linewidth=2.0,
-            hue="variable",
-            #legend=None
-        )
+            linewidth=2.0)
         mpl.rcParams['legend.fontsize'] = 'medium'
-        ax = format_ax(ax, region)
+        ax = format_ax(ax, region, list(to_plot.columns.droplevel(1).unique()))
         ax.tick_params(labelsize='large')
-        fig.suptitle(f'{region}: Covid-19 key data, log scale', y=0.93, fontweight='bold')
+        fig.suptitle(f'{region}: Covid-19 key data, log scale', y=0.93) # fontweight='bold'
         fig.savefig(region.replace(" ", "") + "KeyData.png", dpi=200)
         plt.close()
 
 
-### regional dashboard
-def dashboard():
-    f = plt.figure(constrained_layout=True, figsize=(12, 10), dpi=300) # A4, landscape format
+def dashboard(to_plot, regions):
+    f = plt.figure(constrained_layout=True, figsize=(12, 10), dpi=300)
     gs = f.add_gridspec(4,2)
     mpl.rcParams['legend.fontsize'] = 'xx-small'
     for counter, region in enumerate(regions):
         # create ax in the right place 
         ax = f.add_subplot(gs[(counter%4, counter//4)])
-        sns.lineplot(
-            data=to_plot[~(to_plot.index < start_w1)].swaplevel(axis=1)[region].reset_index().melt(id_vars=['date']), 
-            x="date",
-            y="value",
+        line(
+            data=to_plot[~(to_plot.index < START)].swaplevel(axis=1)[
+                region].reset_index().melt(id_vars=['date']), 
             ax=ax, 
-            linewidth=0.15,
-            hue="variable")
-        sns.lineplot(
-            data=to_plot.rolling(window=7).mean()[~(to_plot.index < start_w1)].swaplevel(axis=1)[region].reset_index().melt(id_vars=['date']),
-            x="date",
-            y="value",
+            linewidth=0.15)
+        line(
+            data=to_plot.rolling(window=7).mean()[~(
+                to_plot.index < START)].swaplevel(axis=1)[region].reset_index(
+                ).melt(id_vars=['date']),
             ax=ax,
-            linewidth=1.0,
-            hue="variable",
-            #legend=None,
-            )
-        ax = format_ax(ax, region)
+            linewidth=1.0)
+        ax = format_ax(ax, region, list(to_plot.columns.droplevel(1).unique()))
         ax.set_title(label=region, fontsize='small', fontweight='semibold')
         ax.tick_params(labelsize='xx-small')
     f.suptitle('England: Covid-19 key data by region, log scale.', fontweight='bold')
     f.savefig("KeyRegionalData.png", dpi=300)
-    plt.close('all')
+    plt.close()
 
 
 if __name__ == '__main__':
-    individual_charts()
-    dashboard()
+    zoe = process_Zoe( fetch_zoe_data() )
+    deaths = process_deaths_data( fetch_deaths_data() )
+    admissions, inpatients = make_healthcare_data()
+    u60, o60, cases = process_cases_data( fetch_cases_data() )
+
+    # regions is the list of regions we want charts for
+    regions = list(admissions.columns.unique())
+    # hack to make England first
+    regions.insert(0, regions.pop(regions.index('England')))
+
+    to_plot = aggreg({
+        'Zoe new infections':zoe,
+        'Admissions':admissions,
+        'Inpatients':inpatients,
+        'Cases >60':o60,
+        'Cases':cases,
+        'Deaths':deaths,})
+    # uncomment if you want to save a csv table of all datasets 
+    # to_plot.to_csv('melted.csv')
+    
+    individual_charts(to_plot, regions)
+    dashboard(to_plot, regions)
