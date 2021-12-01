@@ -64,3 +64,6 @@
 
 # mac
 .DS_Store
+
+# pylint
+.pylintrc
