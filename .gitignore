@@ -67,3 +67,6 @@
 
 # pylint
 .pylintrc
+
+# black
+pyproject.toml
