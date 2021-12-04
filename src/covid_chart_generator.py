@@ -17,6 +17,7 @@ import seaborn as sns
 
 from uk_covid19 import Cov19API
 
+
 # slice to 1st wave, say 1st March
 START = "2020-03-01"
 
@@ -26,228 +27,260 @@ sns.set_color_codes("dark")
 mpl.use("Agg")  # so can save without displaying
 
 
-# Zoe data
-def fetch_zoe_data() -> pd.DataFrame:
-    """# Zoe's csv is normally dated about 5 days in the past, loop back from
-    today's date to get the latest file.
-    """
-    today = date.today()
-    zoe_path = "gcs://covid-public-data/csv/incidence_"
-    for i in range(10):
-        try:
-            try_date = today - timedelta(days=i)
-            try_file = zoe_path + (try_date.strftime("%Y%m%d")) + ".csv"
-            zoe_dataframe = pd.read_csv(try_file)
-            # uncomment to save current file
-            # zoe_dataframe.to_csv('zoe.csv')
-            print(f"downloaded Zoe data for {try_date.strftime('%d-%m-%Y')}")
+class ProcessedData:
+    def dataframe(self):
+        return self.process_data(self.fetch_data())
+
+    def fetch_data(self) -> pd.DataFrame:
+        pass
+
+    def process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
+        pass
+
+
+class Zoe(ProcessedData):
+    def fetch_data(self) -> pd.DataFrame:
+        """Zoe's csv is normally dated about 5 days in the past, loop back from
+        today's date to get the latest file."""
+        today = date.today()
+        zoe_path = "gcs://covid-public-data/csv/incidence_"
+        for i in range(10):
+            try:
+                try_date = today - timedelta(days=i)
+                try_file = zoe_path + (try_date.strftime("%Y%m%d")) + ".csv"
+                zoe_dataframe = pd.read_csv(try_file)
+                # uncomment to save current file
+                # zoe_dataframe.to_csv('zoe.csv')
+                print(
+                    f"downloaded Zoe data for {try_date.strftime('%d-%m-%Y')}"
+                )
+                return zoe_dataframe
+            except ImportError as missing_gcsfs:
+                # probably means gcsfs not installed
+                raise ImportError(
+                    "gcsfs package not installed, required"
+                ) from missing_gcsfs
+            except FileNotFoundError:
+                print(f"no Zoe data for {try_date.strftime('%d-%m-%Y')}")
+                continue
+        return None
+
+    def process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
+        if not raw_data.empty:
+            raw_data.drop(
+                raw_data.columns.difference(
+                    ["date", "region", "covid_in_pop"]
+                ),
+                1,
+                inplace=True,
+            )
+            zoe_dataframe = raw_data.pivot_table(
+                index="date", columns="region"
+            ).apply(np.int64)
+            zoe_dataframe.columns = zoe_dataframe.columns.droplevel(0)
+            to_drop = ["Northern Ireland", "Scotland", "UK", "Wales"]
+            zoe_dataframe = zoe_dataframe.drop(to_drop, axis=1)
+            zoe_dataframe.index = pd.to_datetime(
+                zoe_dataframe.index, dayfirst=True
+            )
+            zoe_dataframe["Midlands"] = (
+                zoe_dataframe["West Midlands"] + zoe_dataframe["East Midlands"]
+            )
+            zoe_dataframe["North East and Yorkshire"] = (
+                zoe_dataframe["North East"]
+                + zoe_dataframe["Yorkshire and The Humber"]
+            )
             return zoe_dataframe
-        except ImportError as missing_gcsfs:
-            # probably means gcsfs not installed
-            raise ImportError(
-                "gcsfs package not installed, required"
-            ) from missing_gcsfs
-        except FileNotFoundError:
-            print(f"no Zoe data for {try_date.strftime('%d-%m-%Y')}")
-            continue
-    return None
+        raise FileNotFoundError("Can't get Zoe data")
 
 
-def process_zoe(raw_zoe: pd.DataFrame) -> pd.DataFrame:
-    if not raw_zoe.empty:
-        raw_zoe.drop(
-            raw_zoe.columns.difference(["date", "region", "covid_in_pop"]),
-            1,
-            inplace=True,
+class GovCall:  # pylint: disable=too-few-public-methods
+    @staticmethod
+    def call_gov_api(
+        callname: str, filters: list, structure: dict
+    ) -> pd.DataFrame:
+        """Helper function for api calls to UK govt covid19 api"""
+        api = Cov19API(
+            filters=filters,
+            structure=structure,
         )
-        zoe_dataframe = raw_zoe.pivot_table(
-            index="date", columns="region"
-        ).apply(np.int64)
-        zoe_dataframe.columns = zoe_dataframe.columns.droplevel(0)
-        to_drop = ["Northern Ireland", "Scotland", "UK", "Wales"]
-        zoe_dataframe = zoe_dataframe.drop(to_drop, axis=1)
-        zoe_dataframe.index = pd.to_datetime(
-            zoe_dataframe.index, dayfirst=True
+        dataframe_from_api = api.get_dataframe()
+        timestamp = api.last_update
+        parsed_timestamp = datetime.fromisoformat(timestamp.strip("Z"))
+        print(
+            f"got {callname} data to {parsed_timestamp.strftime('%d-%m-%Y')}"
         )
-        zoe_dataframe["Midlands"] = (
-            zoe_dataframe["West Midlands"] + zoe_dataframe["East Midlands"]
+        # uncomment below if you want a csv
+        # dataframe_from_api.to_csv(f'{areaName}Healthcare.csv')
+        return dataframe_from_api
+
+
+class Deaths(ProcessedData, GovCall):
+    def fetch_data(self):
+        deaths_query = {
+            "date": "date",
+            "region": "areaName",
+            "deaths": "newDeaths28DaysByDeathDate",
+        }
+        deaths_df = self.call_gov_api(
+            callname="deaths",
+            filters=["areaType=region"],
+            structure=deaths_query,
         )
-        zoe_dataframe["North East and Yorkshire"] = (
-            zoe_dataframe["North East"]
-            + zoe_dataframe["Yorkshire and The Humber"]
+        deaths_df.date = pd.to_datetime(deaths_df.date)
+        return deaths_df
+
+    def process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
+        deaths_df = raw_data
+        ney = (
+            deaths_df[
+                (deaths_df.region == "North East")
+                | (deaths_df.region == "Yorkshire and The Humber")
+            ]
+            .groupby("date")
+            .sum()
         )
-        return zoe_dataframe
-    raise FileNotFoundError("Can't get Zoe data")
+        midlands = (
+            deaths_df[
+                (deaths_df.region == "East Midlands")
+                | (deaths_df.region == "West Midlands")
+            ]
+            .groupby("date")
+            .sum()
+        )
+        ney["region"], midlands["region"] = (
+            "North East and Yorkshire",
+            "Midlands",
+        )
+        deaths_df = deaths_df.set_index("date").append([ney, midlands])
+        england = deaths_df.groupby("date").sum().reset_index()
+        england["region"] = "England"
+        deaths_df = pd.concat([deaths_df.reset_index(), england])
+        deaths_df = deaths_df.pivot_table(index="date", columns="region")
+        deaths_df.columns = deaths_df.columns.droplevel(0)
+        # exclude final 3 days as figures will be updated
+        deaths_df = deaths_df.iloc[:-3]
+        return deaths_df
 
 
-def call_gov_api(
-    callname: str, filters: list, structure: dict
-) -> pd.DataFrame:
-    """helper function for api calls to UK govt covid19 api"""
-    api = Cov19API(
-        filters=filters,
-        structure=structure,
-    )
-    dataframe_from_api = api.get_dataframe()
-    timestamp = api.last_update
-    parsed_timestamp = datetime.fromisoformat(timestamp.strip("Z"))
-    print(f"got {callname} data to {parsed_timestamp.strftime('%d-%m-%Y')}")
-    # uncomment below if you want a csv
-    # dataframe_from_api.to_csv(f'{areaName}Healthcare.csv')
-    return dataframe_from_api
+class Healthcare(ProcessedData, GovCall):
+    def metric_dataframe(self, metric: str) -> pd.DataFrame:
+        """Choose from `admissions`, `inpatients` or `icu"""
+        return self.dataframe().pivot_table(
+            index="date", columns="region", values=metric
+        )
+
+    def _fetch_area(self, area_name: str) -> pd.DataFrame:
+        areas = {
+            "england": ["areaType=nation", "areaName=England"],
+            "regions": ["areaType=nhsRegion"],
+        }
+        healthcare_query = {
+            "date": "date",
+            "region": "areaName",
+            "admissions": "newAdmissions",
+            "inpatients": "hospitalCases",  # inpatients
+            "icu": "covidOccupiedMVBeds",  # kinda ICU
+        }
+        return self.call_gov_api(
+            callname=f"healthcare ({area_name})",
+            filters=areas[area_name],
+            structure=healthcare_query,
+        )
+
+    def fetch_data(self):
+        healthcare_dfs = pd.concat(
+            [self._fetch_area("regions"), self._fetch_area("england")],
+            join="inner",
+            ignore_index=True,
+        )
+        return healthcare_dfs
+
+    def process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
+        healthcare_dfs = raw_data
+        healthcare_dfs.date = pd.to_datetime(healthcare_dfs.date)
+        return healthcare_dfs
 
 
-# deaths
-def fetch_deaths_data():
-    deaths_query = {
-        "date": "date",
-        "region": "areaName",
-        "deaths": "newDeaths28DaysByDeathDate",
-    }
-    deaths_df = call_gov_api(
-        callname="deaths", filters=["areaType=region"], structure=deaths_query
-    )
-    deaths_df.date = pd.to_datetime(deaths_df.date)
-    return deaths_df
+class Cases(ProcessedData, GovCall):
+    def metric_dataframe(self, metric: str) -> pd.DataFrame:
+        """Choose from `u60`, `o60` or `all_ages`"""
+        cases_dataframe = self.dataframe()
+        u60_df = (
+            cases_dataframe[cases_dataframe.age == "00_59"]
+            .pivot_table(index="date", columns="region")
+            .cases
+        )
+        o60_df = (
+            cases_dataframe[cases_dataframe.age == "60+"]
+            .pivot_table(index="date", columns="region")
+            .cases
+        )
+        all_ages_df = u60_df + o60_df
+        choose_df = {"u60": u60_df, "o60": o60_df, "all_ages": all_ages_df}
+        return choose_df[metric]
+
+    def fetch_data(self):
+        cases_query = {
+            "metric": "newCasesBySpecimenDateAgeDemographics",
+            "region": "areaName",
+            "date": "date",
+        }
+        cases_dataframe = self.call_gov_api(
+            callname="cases",
+            filters=["areaType=region"],
+            structure=cases_query,
+        )
+        return cases_dataframe.explode("metric")
+
+    def process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
+        cases_dataframe = raw_data
+        cases_dataframe["age"] = cases_dataframe["metric"].apply(
+            lambda x: x["age"]
+        )
+        cases_dataframe["cases"] = cases_dataframe["metric"].apply(
+            lambda x: x["cases"]
+        )
+        cases_dataframe.date = pd.to_datetime(cases_dataframe.date)
+        cases_dataframe = cases_dataframe.set_index("date")
+        england = cases_dataframe.groupby(["date", "age"]).sum()
+        england["region"] = "England"
+        england = england.reset_index().set_index("date")
+        cases_dataframe = pd.concat([cases_dataframe, england])
+        midlands = pd.concat(
+            [
+                cases_dataframe[cases_dataframe.region == "East Midlands"],
+                cases_dataframe[cases_dataframe.region == "West Midlands"],
+            ]
+        )
+        midlands = (
+            midlands.reset_index()
+            .groupby(["date", "age"])
+            .sum()
+            .reset_index()
+            .set_index("date")
+        )
+        midlands["region"] = "Midlands"
+        ney = pd.concat(
+            [
+                cases_dataframe[cases_dataframe.region == "North East"],
+                cases_dataframe[
+                    cases_dataframe.region == "Yorkshire and The Humber"
+                ],
+            ]
+        )
+        ney = (
+            ney.reset_index()
+            .groupby(["date", "age"])
+            .sum()
+            .reset_index()
+            .set_index("date")
+        )
+        ney["region"] = "North East and Yorkshire"
+        return pd.concat([cases_dataframe, ney, midlands])
 
 
-def process_deaths_data(deaths_df: pd.DataFrame) -> pd.DataFrame:
-    ney = (
-        deaths_df[
-            (deaths_df.region == "North East")
-            | (deaths_df.region == "Yorkshire and The Humber")
-        ]
-        .groupby("date")
-        .sum()
-    )
-    midlands = (
-        deaths_df[
-            (deaths_df.region == "East Midlands")
-            | (deaths_df.region == "West Midlands")
-        ]
-        .groupby("date")
-        .sum()
-    )
-    ney["region"], midlands["region"] = "North East and Yorkshire", "Midlands"
-    deaths_df = deaths_df.set_index("date").append([ney, midlands])
-    england = deaths_df.groupby("date").sum().reset_index()
-    england["region"] = "England"
-    deaths_df = pd.concat([deaths_df.reset_index(), england])
-    deaths_df = deaths_df.pivot_table(index="date", columns="region")
-    deaths_df.columns = deaths_df.columns.droplevel(0)
-    # exclude final 3 days as figures will be updated
-    deaths_df = deaths_df.iloc[:-3]
-    return deaths_df
-
-
-# Hospital data
-def fetch_healthcare_data(area_name: str) -> pd.DataFrame:
-    areas = {
-        "england": ["areaType=nation", "areaName=England"],
-        "regions": ["areaType=nhsRegion"],
-    }
-    healthcare_query = {
-        "date": "date",
-        "region": "areaName",
-        "newAdmissions": "newAdmissions",
-        "hospitalCases": "hospitalCases",  # inpatients
-        #'covidOccupiedMVBeds': 'covidOccupiedMVBeds', # kinda ICU
-    }
-    return call_gov_api(
-        callname=f"healthcare ({area_name})",
-        filters=areas[area_name],
-        structure=healthcare_query,
-    )
-
-
-def make_healthcare_data():
-    healthcare_dfs = pd.concat(
-        [fetch_healthcare_data("regions"), fetch_healthcare_data("england")],
-        join="inner",
-        ignore_index=True,
-    )
-    healthcare_dfs.date = pd.to_datetime(healthcare_dfs.date)
-    admissions_df = healthcare_dfs.pivot_table(
-        index="date", columns="region", values="newAdmissions"
-    )
-    inpatients_df = healthcare_dfs.pivot_table(
-        index="date", columns="region", values="hospitalCases"
-    )
-    return admissions_df, inpatients_df
-
-
-# Cases
-def fetch_cases_data():
-    cases_query = {
-        "metric": "newCasesBySpecimenDateAgeDemographics",
-        "region": "areaName",
-        "date": "date",
-    }
-    cases_dataframe = call_gov_api(
-        callname="cases", filters=["areaType=region"], structure=cases_query
-    )
-    return cases_dataframe.explode("metric")
-
-
-def process_cases_data(cases_dataframe: pd.DataFrame) -> pd.DataFrame:
-    cases_dataframe["age"] = cases_dataframe["metric"].apply(
-        lambda x: x["age"]
-    )
-    cases_dataframe["cases"] = cases_dataframe["metric"].apply(
-        lambda x: x["cases"]
-    )
-    cases_dataframe.date = pd.to_datetime(cases_dataframe.date)
-    cases_dataframe = cases_dataframe.set_index("date")
-    england = cases_dataframe.groupby(["date", "age"]).sum()
-    england["region"] = "England"
-    england = england.reset_index().set_index("date")
-    cases_dataframe = pd.concat([cases_dataframe, england])
-    midlands = pd.concat(
-        [
-            cases_dataframe[cases_dataframe.region == "East Midlands"],
-            cases_dataframe[cases_dataframe.region == "West Midlands"],
-        ]
-    )
-    midlands = (
-        midlands.reset_index()
-        .groupby(["date", "age"])
-        .sum()
-        .reset_index()
-        .set_index("date")
-    )
-    midlands["region"] = "Midlands"
-    ney = pd.concat(
-        [
-            cases_dataframe[cases_dataframe.region == "North East"],
-            cases_dataframe[
-                cases_dataframe.region == "Yorkshire and The Humber"
-            ],
-        ]
-    )
-    ney = (
-        ney.reset_index()
-        .groupby(["date", "age"])
-        .sum()
-        .reset_index()
-        .set_index("date")
-    )
-    ney["region"] = "North East and Yorkshire"
-    cases_dataframe = pd.concat([cases_dataframe, ney, midlands])
-    u60_df = (
-        cases_dataframe[cases_dataframe.age == "00_59"]
-        .pivot_table(index="date", columns="region")
-        .cases
-    )
-    o60_df = (
-        cases_dataframe[cases_dataframe.age == "60+"]
-        .pivot_table(index="date", columns="region")
-        .cases
-    )
-    cases_df = u60_df + o60_df
-    return u60_df, o60_df, cases_df
-
-
-def aggreg(datasets: dict) -> pd.DataFrame:
+def aggregate_dataframes(datasets: dict) -> pd.DataFrame:
     """Build a single dataframe from dict of passed dataframes"""
     aggregated_df = pd.concat(
         datasets.values(), keys=datasets.keys(), join="outer", axis=1
@@ -256,8 +289,8 @@ def aggreg(datasets: dict) -> pd.DataFrame:
 
 
 def format_ax(ax: plt.subplot, region: str, lgnd_labels: list) -> plt.subplot:
-    """common formatting for all charts"""
-    y_ticks_logarithmic = [1, 10, 100, 1000, 10000]  # for log y-scale
+    """Common formatting for all charts"""
+    y_ticks_logarithmic = [1, 10, 100, 1000, 10000]
     handles, _ = ax.get_legend_handles_labels()
     ax.legend(
         handles=handles,
@@ -359,10 +392,12 @@ def dashboard(to_plot, regions):
 
 
 if __name__ == "__main__":
-    zoe = process_zoe(fetch_zoe_data())
-    deaths = process_deaths_data(fetch_deaths_data())
-    admissions, inpatients = make_healthcare_data()
-    u60, o60, cases = process_cases_data(fetch_cases_data())
+    zoe = Zoe().dataframe()
+    deaths = Deaths().dataframe()
+    admissions = Healthcare().metric_dataframe("admissions")
+    inpatients = Healthcare().metric_dataframe("inpatients")
+    o60 = Cases().metric_dataframe("o60")
+    cases = Cases().metric_dataframe("all_ages")
 
     # regions is the list of regions we want charts for
     regions_to_use = list(admissions.columns.unique())
@@ -371,7 +406,7 @@ if __name__ == "__main__":
         0, regions_to_use.pop(regions_to_use.index("England"))
     )
 
-    aggreg_df = aggreg(
+    aggreg_df = aggregate_dataframes(
         {
             "Zoe new infections": zoe,
             "Admissions": admissions,
