@@ -28,42 +28,24 @@ mpl.use("Agg")  # so can save without displaying
 
 class ProcessedData:
     def dataframe(self):
-        return self.process_data(self.fetch_data())
+        return self._process_data(self.fetch_raw_data())
 
-    def fetch_data(self) -> pd.DataFrame:
+    def fetch_raw_data(self) -> pd.DataFrame:
         pass
 
-    def process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
+    def _process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
         pass
 
 
 class Zoe(ProcessedData):
-    def fetch_data(self) -> pd.DataFrame:
+    def fetch_raw_data(self) -> pd.DataFrame:
         """Zoe's csv is normally dated about 5 days in the past, loop back from
         today's date to get the latest file."""
-        today = date.today()
         zoe_path = "gcs://covid-public-data/csv/incidence_"
-        ### decorator for retry ###
-        for i in range(10):
-            try:
-                try_date = today - timedelta(days=i)
-                try_file = zoe_path + (try_date.strftime("%Y%m%d")) + ".csv"
-                zoe_dataframe = pd.read_csv(try_file)
-                print(
-                    f"downloaded Zoe data for {try_date.strftime('%d-%m-%Y')}"
-                )
-                return zoe_dataframe
-            except ImportError as missing_gcsfs:
-                # probably means gcsfs not installed
-                raise ImportError(
-                    "gcsfs package not installed, required"
-                ) from missing_gcsfs
-            except FileNotFoundError:
-                print(f"no Zoe data for {try_date.strftime('%d-%m-%Y')}")
-                continue
-        return None
+        zoe_dataframe = self._step_back(zoe_path)
+        return zoe_dataframe
 
-    def process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
+    def _process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
         if not raw_data.empty:
             raw_data.drop(
                 raw_data.columns.difference(
@@ -89,13 +71,37 @@ class Zoe(ProcessedData):
             return zoe_dataframe
         raise FileNotFoundError("Can't get Zoe data")
 
+    @staticmethod
+    def _step_back(zoe_path: str) -> pd.DataFrame:
+        today = date.today()
+        for i in range(10):
+            try:
+                try_date = today - timedelta(days=i)
+                try_file = zoe_path + (try_date.strftime("%Y%m%d")) + ".csv"
+                zoe_dataframe = pd.read_csv(try_file)
+                print(
+                    f"downloaded Zoe data for {try_date.strftime('%d-%m-%Y')}"
+                )
+                return zoe_dataframe
+            except ImportError as missing_gcsfs:
+                # probably means gcsfs not installed
+                raise ImportError(
+                    "gcsfs package not installed, required"
+                ) from missing_gcsfs
+            except FileNotFoundError:
+                print(f"no Zoe data for {try_date.strftime('%d-%m-%Y')}")
+                continue
+        return None
+
 
 class GovCall:  # pylint: disable=too-few-public-methods
     def call_gov_api(
         self, callname: str, filters: list, structure: dict
     ) -> pd.DataFrame:
         """Helper function for api calls to PHE Covid19 API"""
-        dataframe_from_api, timestamp = self._fetch_data(filters, structure)
+        dataframe_from_api, timestamp = self._fetch_phe_data(
+            filters, structure
+        )
         parsed_timestamp = datetime.fromisoformat(timestamp.strip("Z"))
         print(
             f"got {callname} data to {parsed_timestamp.strftime('%d-%m-%Y')}"
@@ -103,19 +109,16 @@ class GovCall:  # pylint: disable=too-few-public-methods
         return dataframe_from_api
 
     @staticmethod
-    def _fetch_data(filters: list, structure: dict) -> pd.DataFrame:
+    def _fetch_phe_data(filters: list, structure: dict) -> pd.DataFrame:
         api = Cov19API(
             filters=filters,
             structure=structure,
         )
         return api.get_dataframe(), api.last_update
 
-    def _process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
-        pass
-
 
 class Deaths(ProcessedData, GovCall):
-    def fetch_data(self):
+    def fetch_raw_data(self):
         deaths_query = {
             "date": "date",
             "region": "areaName",
@@ -129,7 +132,7 @@ class Deaths(ProcessedData, GovCall):
         deaths_df.date = pd.to_datetime(deaths_df.date)
         return deaths_df
 
-    def process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
+    def _process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
         deaths_df = raw_data
         midlands = self._concatenate_regions(
             deaths_df,
@@ -199,7 +202,7 @@ class Healthcare(ProcessedData, GovCall):
         )
         return out_df
 
-    def fetch_data(self):
+    def fetch_raw_data(self):
         healthcare_dfs = pd.concat(
             [self._fetch_area("regions"), self._fetch_area("england")],
             join="inner",
@@ -207,7 +210,7 @@ class Healthcare(ProcessedData, GovCall):
         )
         return healthcare_dfs
 
-    def process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
+    def _process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
         healthcare_dfs = raw_data
         healthcare_dfs.date = pd.to_datetime(healthcare_dfs.date)
         return healthcare_dfs
@@ -235,7 +238,7 @@ class Cases(ProcessedData, GovCall):
         choose_df = {"u60": u60_df, "o60": o60_df, "all_ages": all_ages_df}
         return choose_df[metric]
 
-    def fetch_data(self):
+    def fetch_raw_data(self):
         cases_query = {
             "metric": "newCasesBySpecimenDateAgeDemographics",
             "region": "areaName",
@@ -248,7 +251,7 @@ class Cases(ProcessedData, GovCall):
         )
         return cases_dataframe.explode("metric")
 
-    def process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
+    def _process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
         cases_dataframe = raw_data
         cases_dataframe = self._expand_from_explode(
             cases_dataframe, ["age", "cases"]
