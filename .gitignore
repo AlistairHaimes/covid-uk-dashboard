@@ -72,3 +72,5 @@
 pyproject.toml
 
 Makefile
+
+notebooks/
