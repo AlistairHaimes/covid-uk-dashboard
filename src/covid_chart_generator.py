@@ -4,7 +4,6 @@
 Aggregates key data from Zoe and government to provide dashboards for
 datasets on a single chart, both nationally and per region.
 """
-
 from datetime import datetime, date, timedelta
 
 import pandas as pd
@@ -44,13 +43,12 @@ class Zoe(ProcessedData):
         today's date to get the latest file."""
         today = date.today()
         zoe_path = "gcs://covid-public-data/csv/incidence_"
+        ### decorator for retry ###
         for i in range(10):
             try:
                 try_date = today - timedelta(days=i)
                 try_file = zoe_path + (try_date.strftime("%Y%m%d")) + ".csv"
                 zoe_dataframe = pd.read_csv(try_file)
-                # uncomment to save current file
-                # zoe_dataframe.to_csv('zoe.csv')
                 print(
                     f"downloaded Zoe data for {try_date.strftime('%d-%m-%Y')}"
                 )
@@ -78,8 +76,6 @@ class Zoe(ProcessedData):
                 index="date", columns="region"
             ).apply(np.int64)
             zoe_dataframe.columns = zoe_dataframe.columns.droplevel(0)
-            to_drop = ["Northern Ireland", "Scotland", "UK", "Wales"]
-            zoe_dataframe = zoe_dataframe.drop(to_drop, axis=1)
             zoe_dataframe.index = pd.to_datetime(
                 zoe_dataframe.index, dayfirst=True
             )
@@ -95,24 +91,27 @@ class Zoe(ProcessedData):
 
 
 class GovCall:  # pylint: disable=too-few-public-methods
-    @staticmethod
     def call_gov_api(
-        callname: str, filters: list, structure: dict
+        self, callname: str, filters: list, structure: dict
     ) -> pd.DataFrame:
-        """Helper function for api calls to UK govt covid19 api"""
-        api = Cov19API(
-            filters=filters,
-            structure=structure,
-        )
-        dataframe_from_api = api.get_dataframe()
-        timestamp = api.last_update
+        """Helper function for api calls to PHE Covid19 API"""
+        dataframe_from_api, timestamp = self._fetch_data(filters, structure)
         parsed_timestamp = datetime.fromisoformat(timestamp.strip("Z"))
         print(
             f"got {callname} data to {parsed_timestamp.strftime('%d-%m-%Y')}"
         )
-        # uncomment below if you want a csv
-        # dataframe_from_api.to_csv(f'{areaName}Healthcare.csv')
         return dataframe_from_api
+
+    @staticmethod
+    def _fetch_data(filters: list, structure: dict) -> pd.DataFrame:
+        api = Cov19API(
+            filters=filters,
+            structure=structure,
+        )
+        return api.get_dataframe(), api.last_update
+
+    def _process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
+        pass
 
 
 class Deaths(ProcessedData, GovCall):
@@ -132,25 +131,15 @@ class Deaths(ProcessedData, GovCall):
 
     def process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
         deaths_df = raw_data
-        ney = (
-            deaths_df[
-                (deaths_df.region == "North East")
-                | (deaths_df.region == "Yorkshire and The Humber")
-            ]
-            .groupby("date")
-            .sum()
+        midlands = self._concatenate_regions(
+            deaths_df,
+            input_regions=["East Midlands", "West Midlands"],
+            output_label="Midlands",
         )
-        midlands = (
-            deaths_df[
-                (deaths_df.region == "East Midlands")
-                | (deaths_df.region == "West Midlands")
-            ]
-            .groupby("date")
-            .sum()
-        )
-        ney["region"], midlands["region"] = (
-            "North East and Yorkshire",
-            "Midlands",
+        ney = self._concatenate_regions(
+            deaths_df,
+            input_regions=["North East", "Yorkshire and The Humber"],
+            output_label="North East and Yorkshire",
         )
         deaths_df = deaths_df.set_index("date").append([ney, midlands])
         england = deaths_df.groupby("date").sum().reset_index()
@@ -162,11 +151,32 @@ class Deaths(ProcessedData, GovCall):
         deaths_df = deaths_df.iloc[:-3]
         return deaths_df
 
+    @staticmethod
+    def _concatenate_regions(
+        big_df: pd.DataFrame, input_regions: list, output_label: str
+    ) -> pd.DataFrame:
+        out_dataframe = (
+            pd.concat(
+                [
+                    big_df[big_df.region == input_region]
+                    for input_region in input_regions
+                ]
+            )
+            .groupby("date")
+            .sum()
+        )
+        out_dataframe["region"] = output_label
+        return out_dataframe
+
 
 class Healthcare(ProcessedData, GovCall):
-    def metric_dataframe(self, metric: str) -> pd.DataFrame:
-        """Choose from `admissions`, `inpatients` or `icu"""
-        return self.dataframe().pivot_table(
+    def __init__(self):
+        # so I don't hit the db repeatedly
+        self._dataframe = self.dataframe()
+
+    def metric(self, metric: str) -> pd.DataFrame:
+        """Choose from `admissions`, `inpatients` or `icu`"""
+        return self._dataframe.pivot_table(
             index="date", columns="region", values=metric
         )
 
@@ -182,11 +192,12 @@ class Healthcare(ProcessedData, GovCall):
             "inpatients": "hospitalCases",  # inpatients
             "icu": "covidOccupiedMVBeds",  # kinda ICU
         }
-        return self.call_gov_api(
+        out_df = self.call_gov_api(
             callname=f"healthcare ({area_name})",
             filters=areas[area_name],
             structure=healthcare_query,
         )
+        return out_df
 
     def fetch_data(self):
         healthcare_dfs = pd.concat(
@@ -203,9 +214,13 @@ class Healthcare(ProcessedData, GovCall):
 
 
 class Cases(ProcessedData, GovCall):
-    def metric_dataframe(self, metric: str) -> pd.DataFrame:
+    def __init__(self):
+        # so I don't hit the db repeatedly
+        self._dataframe = self.dataframe()
+
+    def metric(self, metric: str) -> pd.DataFrame:
         """Choose from `u60`, `o60` or `all_ages`"""
-        cases_dataframe = self.dataframe()
+        cases_dataframe = self._dataframe
         u60_df = (
             cases_dataframe[cases_dataframe.age == "00_59"]
             .pivot_table(index="date", columns="region")
@@ -235,11 +250,8 @@ class Cases(ProcessedData, GovCall):
 
     def process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
         cases_dataframe = raw_data
-        cases_dataframe["age"] = cases_dataframe["metric"].apply(
-            lambda x: x["age"]
-        )
-        cases_dataframe["cases"] = cases_dataframe["metric"].apply(
-            lambda x: x["cases"]
+        cases_dataframe = self._expand_from_explode(
+            cases_dataframe, ["age", "cases"]
         )
         cases_dataframe.date = pd.to_datetime(cases_dataframe.date)
         cases_dataframe = cases_dataframe.set_index("date")
@@ -247,37 +259,45 @@ class Cases(ProcessedData, GovCall):
         england["region"] = "England"
         england = england.reset_index().set_index("date")
         cases_dataframe = pd.concat([cases_dataframe, england])
-        midlands = pd.concat(
-            [
-                cases_dataframe[cases_dataframe.region == "East Midlands"],
-                cases_dataframe[cases_dataframe.region == "West Midlands"],
-            ]
+        midlands = self._concatenate_regions(
+            cases_dataframe,
+            input_regions=["East Midlands", "West Midlands"],
+            output_label="Midlands",
         )
-        midlands = (
-            midlands.reset_index()
-            .groupby(["date", "age"])
-            .sum()
-            .reset_index()
-            .set_index("date")
+        ney = self._concatenate_regions(
+            cases_dataframe,
+            ["North East", "Yorkshire and The Humber"],
+            output_label="North East and Yorkshire",
         )
-        midlands["region"] = "Midlands"
-        ney = pd.concat(
-            [
-                cases_dataframe[cases_dataframe.region == "North East"],
-                cases_dataframe[
-                    cases_dataframe.region == "Yorkshire and The Humber"
-                ],
-            ]
-        )
-        ney = (
-            ney.reset_index()
-            .groupby(["date", "age"])
-            .sum()
-            .reset_index()
-            .set_index("date")
-        )
-        ney["region"] = "North East and Yorkshire"
         return pd.concat([cases_dataframe, ney, midlands])
+
+    @staticmethod
+    def _expand_from_explode(exploded_df, metrics):
+        for metric in metrics:
+            exploded_df[metric] = exploded_df["metric"].apply(
+                lambda x: x[metric]  # pylint: disable=cell-var-from-loop
+            )
+        return exploded_df
+
+    @staticmethod
+    def _concatenate_regions(
+        in_df: pd.DataFrame, input_regions: list, output_label: str
+    ) -> pd.DataFrame:
+        out_df = (
+            pd.concat(
+                [
+                    in_df[in_df.region == input_region]
+                    for input_region in input_regions
+                ]
+            )
+            .reset_index()
+            .groupby(["date", "age"])
+            .sum()
+            .reset_index()
+            .set_index("date")
+        )
+        out_df["region"] = output_label
+        return out_df
 
 
 def aggregate_dataframes(datasets: dict) -> pd.DataFrame:
@@ -329,7 +349,8 @@ def line(data, ax, linewidth):
 
 def individual_charts(to_plot, regions):
     for region in regions:
-        fig, ax = plt.subplots(figsize=(12, 7))
+        print(f"making chart for {region}")
+        fig, ax = plt.subplots(figsize=(12, 7), dpi=300)
         line(
             data=to_plot[~(to_plot.index < START)]
             .swaplevel(axis=1)[region]
@@ -358,6 +379,7 @@ def individual_charts(to_plot, regions):
 
 
 def dashboard(to_plot, regions):
+    print("making dashboard chart")
     f = plt.figure(constrained_layout=True, figsize=(12, 10), dpi=300)
     gs = f.add_gridspec(4, 2)
     mpl.rcParams["legend.fontsize"] = "xx-small"
@@ -394,10 +416,12 @@ def dashboard(to_plot, regions):
 if __name__ == "__main__":
     zoe = Zoe().dataframe()
     deaths = Deaths().dataframe()
-    admissions = Healthcare().metric_dataframe("admissions")
-    inpatients = Healthcare().metric_dataframe("inpatients")
-    o60 = Cases().metric_dataframe("o60")
-    cases = Cases().metric_dataframe("all_ages")
+    healthcare = Healthcare()
+    admissions = healthcare.metric("admissions")
+    inpatients = healthcare.metric("inpatients")
+    cases = Cases()
+    o60 = cases.metric("o60")
+    cases = cases.metric("all_ages")
 
     # regions is the list of regions we want charts for
     regions_to_use = list(admissions.columns.unique())
