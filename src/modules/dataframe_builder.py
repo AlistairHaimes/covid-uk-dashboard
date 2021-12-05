@@ -78,14 +78,12 @@ class Zoe(ProcessedData):
         return None
 
 
-class GovCall:  # pylint: disable=too-few-public-methods
-    def call_gov_api(
+class GovCall:
+    def timelogged_call_gov_api(
         self, callname: str, filters: list, structure: dict
     ) -> pd.DataFrame:
         """Helper function for api calls to PHE Covid19 API"""
-        dataframe_from_api, timestamp = self._fetch_phe_data(
-            filters, structure
-        )
+        dataframe_from_api, timestamp = self.fetch_phe_data(filters, structure)
         parsed_timestamp = datetime.fromisoformat(timestamp.strip("Z"))
         print(
             f"got {callname} data to {parsed_timestamp.strftime('%d-%m-%Y')}"
@@ -93,7 +91,7 @@ class GovCall:  # pylint: disable=too-few-public-methods
         return dataframe_from_api
 
     @staticmethod
-    def _fetch_phe_data(filters: list, structure: dict) -> pd.DataFrame:
+    def fetch_phe_data(filters: list, structure: dict) -> pd.DataFrame:
         api = Cov19API(
             filters=filters,
             structure=structure,
@@ -108,7 +106,7 @@ class Deaths(ProcessedData, GovCall):
             "region": "areaName",
             "deaths": "newDeaths28DaysByDeathDate",
         }
-        deaths_df = self.call_gov_api(
+        deaths_df = self.timelogged_call_gov_api(
             callname="deaths",
             filters=["areaType=region"],
             structure=deaths_query,
@@ -179,7 +177,7 @@ class Healthcare(ProcessedData, GovCall):
             "inpatients": "hospitalCases",  # inpatients
             "icu": "covidOccupiedMVBeds",  # kinda ICU
         }
-        out_df = self.call_gov_api(
+        out_df = self.timelogged_call_gov_api(
             callname=f"healthcare ({area_name})",
             filters=areas[area_name],
             structure=healthcare_query,
@@ -228,7 +226,7 @@ class Cases(ProcessedData, GovCall):
             "region": "areaName",
             "date": "date",
         }
-        cases_dataframe = self.call_gov_api(
+        cases_dataframe = self.timelogged_call_gov_api(
             callname="cases",
             filters=["areaType=region"],
             structure=cases_query,
