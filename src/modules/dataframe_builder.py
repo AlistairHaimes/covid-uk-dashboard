@@ -15,10 +15,10 @@ class ProcessedData:
         return self._process_data(self.fetch_raw_data())
 
     def fetch_raw_data(self) -> pd.DataFrame:
-        pass
+        raise NotImplementedError("overridden in subClass")
 
     def _process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
-        pass
+        raise NotImplementedError("overridden in subClass")
 
 
 class Zoe(ProcessedData):
