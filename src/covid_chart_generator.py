@@ -4,12 +4,21 @@
 Aggregates key data from Zoe and government to provide dashboards for
 datasets on a single chart, both nationally and per region.
 """
+from pathlib import Path, PurePath
+
 import matplotlib as mpl  # for formatting log y axis
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 from modules.dataframe_builder import Zoe, Deaths, Healthcare, Cases
 from modules.utils import aggregate_dataframes, format_ax, line
+
+
+RUNPATH = Path(__file__)
+SRC_DIRECTORY = RUNPATH.parent
+HEADPATH = SRC_DIRECTORY.parent
+CHARTS_DIRECTORY = HEADPATH / "charts"
+
 
 # slice to 1st wave, say 1st March
 START = "2020-03-01"
@@ -47,7 +56,12 @@ def individual_charts(to_plot, regions):
         fig.suptitle(
             f"{region}: Covid-19 key data, log scale", y=0.93
         )  # fontweight='bold'
-        fig.savefig(region.replace(" ", "") + "KeyData.png", dpi=200)
+        fig.savefig(
+            PurePath(
+                CHARTS_DIRECTORY, region.replace(" ", "") + "KeyData.png"
+            ),
+            dpi=200,
+        )
         plt.close()
 
 
@@ -82,7 +96,7 @@ def dashboard(to_plot, regions):
     f.suptitle(
         "England: Covid-19 key data by region, log scale.", fontweight="bold"
     )
-    f.savefig("KeyRegionalData.png", dpi=300)
+    f.savefig(PurePath(CHARTS_DIRECTORY, "KeyRegionalData.png"), dpi=300)
     plt.close()
 
 
