@@ -1,7 +1,7 @@
 ## covid-uk-dashboard
 python3 code to export .pngs for (public) UK covid-19 data, national and regional.
 
-![England](charts/EnglandKeyData.png)
+![England](example/EnglandKeyData.png)
 
 ```python
 python src/covid_chart_generator.py
@@ -20,5 +20,3 @@ seaborn
 [uk-covid19] (https://pypi.org/project/uk-covid19/)
 
 I'd recommend setting up an environment (easiest with miniconda or similar), then just `pip install pandas numpy matplotlib seaborn gcsfs uk-covid19`
-
-![dashboard](charts/KeyRegionalData.png)
