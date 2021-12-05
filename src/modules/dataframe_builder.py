@@ -235,11 +235,10 @@ class Cases(ProcessedData, GovCall):
 
     def _process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
         cases_dataframe = raw_data
+        cases_dataframe.date = pd.to_datetime(cases_dataframe.date)
         cases_dataframe = self._expand_from_explode(
             cases_dataframe, ["age", "cases"]
         )
-        cases_dataframe.date = pd.to_datetime(cases_dataframe.date)
-        cases_dataframe = cases_dataframe.set_index("date")
         england = cases_dataframe.groupby(["date", "age"]).sum()
         england["region"] = "England"
         england = england.reset_index().set_index("date")
@@ -257,11 +256,15 @@ class Cases(ProcessedData, GovCall):
         return pd.concat([cases_dataframe, ney, midlands])
 
     @staticmethod
-    def _expand_from_explode(exploded_df, metrics):
-        for metric in metrics:
-            exploded_df[metric] = exploded_df["metric"].apply(
-                lambda x: x[metric]  # pylint: disable=cell-var-from-loop
-            )
+    def _expand_from_explode(
+        exploded_df: pd.DataFrame, metrics: list
+    ) -> pd.DataFrame:
+        exploded_df = exploded_df.reset_index()
+        exploded_df = (
+            exploded_df.join(pd.json_normalize(exploded_df.metric)[metrics])
+            .set_index("date")
+            .drop(columns=["index", "metric"])
+        )
         return exploded_df
 
     @staticmethod
