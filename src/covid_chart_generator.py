@@ -57,10 +57,7 @@ def individual_charts(to_plot, regions):
             f"{region}: Covid-19 key data, log scale", y=0.93
         )  # fontweight='bold'
         fig.savefig(
-            PurePath(
-                CHARTS_DIRECTORY, region.replace(" ", "") + "KeyData.png"
-            ),
-            dpi=200,
+            PurePath(CHARTS_DIRECTORY, region.replace(" ", "") + "KeyData.png")
         )
         plt.close()
 
@@ -96,7 +93,7 @@ def dashboard(to_plot, regions):
     f.suptitle(
         "England: Covid-19 key data by region, log scale.", fontweight="bold"
     )
-    f.savefig(PurePath(CHARTS_DIRECTORY, "KeyRegionalData.png"), dpi=300)
+    f.savefig(PurePath(CHARTS_DIRECTORY, "KeyRegionalData.png"))
     plt.close()
 
 

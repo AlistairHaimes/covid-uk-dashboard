@@ -23,8 +23,6 @@ class ProcessedData:
 
 class Zoe(ProcessedData):
     def fetch_raw_data(self) -> pd.DataFrame:
-        """Zoe's csv is normally dated about 5 days in the past, loop back from
-        today's date to get the latest file."""
         zoe_path = "gcs://covid-public-data/csv/incidence_"
         zoe_dataframe = self._step_back(zoe_path)
         return zoe_dataframe
@@ -32,10 +30,9 @@ class Zoe(ProcessedData):
     def _process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
         if not raw_data.empty:
             raw_data.drop(
-                raw_data.columns.difference(
+                columns=raw_data.columns.difference(
                     ["date", "region", "covid_in_pop"]
                 ),
-                1,
                 inplace=True,
             )
             zoe_dataframe = raw_data.pivot_table(
@@ -57,6 +54,8 @@ class Zoe(ProcessedData):
 
     @staticmethod
     def _step_back(zoe_path: str) -> pd.DataFrame:
+        """Zoe's csv is normally dated about 5 days in the past, loop back from
+        today's date to get the latest file."""
         today = date.today()
         for i in range(10):
             try:
@@ -75,7 +74,7 @@ class Zoe(ProcessedData):
             except FileNotFoundError:
                 print(f"no Zoe data for {try_date.strftime('%d-%m-%Y')}")
                 continue
-        return None
+        raise FileNotFoundError("couldn't get Zoe data :(")
 
 
 class GovCall:
@@ -231,7 +230,7 @@ class Cases(ProcessedData, GovCall):
             filters=["areaType=region"],
             structure=cases_query,
         )
-        return cases_dataframe.explode("metric")
+        return cases_dataframe
 
     def _process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
         cases_dataframe = raw_data
@@ -257,15 +256,16 @@ class Cases(ProcessedData, GovCall):
 
     @staticmethod
     def _expand_from_explode(
-        exploded_df: pd.DataFrame, metrics: list
+        raw_df: pd.DataFrame, metrics: list
     ) -> pd.DataFrame:
-        exploded_df = exploded_df.reset_index()
-        exploded_df = (
+        """Expands the 'metric` dictionary column into separate columns"""
+        exploded_df = raw_df.explode("metric").reset_index()
+        processed_df = (
             exploded_df.join(pd.json_normalize(exploded_df.metric)[metrics])
             .set_index("date")
             .drop(columns=["index", "metric"])
         )
-        return exploded_df
+        return processed_df
 
     @staticmethod
     def _concatenate_regions(
