@@ -14,3 +14,8 @@ Makefile
 
 notebooks/
 archive/
+
+.mypy_cache
+
+src/modules/__pycache__
+src/scratch
