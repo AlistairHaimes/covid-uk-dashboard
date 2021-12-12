@@ -1,6 +1,9 @@
 # Portable Network Graphics
 charts/*.png
 
+# html
+charts/*.html
+
 # mac
 .DS_Store
 
