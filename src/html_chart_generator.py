@@ -27,18 +27,15 @@ CHARTS_DIRECTORY = HEADPATH / "html_charts"
 # slice to 1st wave, say 1st March
 START = "2020-03-01"
 
-aggreg_df, regions_to_use = make_default_dataframes()
+to_plot, regions_to_use = make_default_dataframes()
 
-to_plot = aggreg_df
 for region in regions_to_use:
-
     source = (
         to_plot[~(to_plot.index < START)]
         .swaplevel(axis=1)[region]
         .reset_index()
         .melt(id_vars=["date"])
     )
-
     source_average = (
         to_plot.rolling(window=7)
         .mean()[~(to_plot.index < START)]
@@ -56,18 +53,18 @@ for region in regions_to_use:
     color_list = [
         "#3b84c1",
         "green",
-        #'green',
         "red",
         "#9d3abd",
         "brown",
     ]
-
     assert len(variable_list) == len(color_list)
+    
     scale = alt.Scale(domain=variable_list, range=color_list)
     color = alt.Color(
         "variable:N",
         scale=scale,
     )
+    
     brush = alt.selection_interval(encodings=["x"], name="sel")
     click = alt.selection_multi(encodings=["color"])
 
