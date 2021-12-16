@@ -9,6 +9,8 @@ import pandas as pd
 import numpy as np
 from uk_covid19 import Cov19API
 
+from modules.utils import aggregate_dataframes
+
 
 class ProcessedData:
     def dataframe(self):
@@ -286,3 +288,33 @@ class Cases(ProcessedData, GovCall):
         )
         out_df["region"] = output_label
         return out_df
+
+
+def make_default_dataframes():
+    zoe = Zoe().dataframe()
+    deaths = Deaths().dataframe()
+    healthcare = Healthcare()
+    admissions = healthcare.metric("admissions")
+    inpatients = healthcare.metric("inpatients")
+    cases = Cases()
+    o60 = cases.metric("o60")
+    cases = cases.metric("all_ages")
+
+    # regions is the list of regions we want charts for
+    regions_to_use = list(admissions.columns.unique())
+    # hack to make England first
+    regions_to_use.insert(
+        0, regions_to_use.pop(regions_to_use.index("England"))
+    )
+
+    aggreg_df = aggregate_dataframes(
+        {
+            "Zoe new infections": zoe,
+            "Admissions": admissions,
+            "Inpatients": inpatients,
+            "Cases >60": o60,
+            "Cases": cases,
+            "Deaths": deaths,
+        }
+    )
+    return aggreg_df, regions_to_use

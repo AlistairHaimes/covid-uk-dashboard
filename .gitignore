@@ -2,7 +2,7 @@
 charts/*.png
 
 # html
-charts/*.html
+html_charts/*.html
 
 # mac
 .DS_Store

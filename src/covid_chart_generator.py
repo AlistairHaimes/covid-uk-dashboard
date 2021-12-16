@@ -10,8 +10,8 @@ import matplotlib as mpl  # for formatting log y axis
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from modules.dataframe_builder import Zoe, Deaths, Healthcare, Cases
-from modules.utils import aggregate_dataframes, format_ax, line
+from modules.dataframe_builder import make_default_dataframes
+from modules.utils import format_ax, line
 
 
 RUNPATH = Path(__file__)
@@ -98,34 +98,8 @@ def dashboard(to_plot, regions):
 
 
 if __name__ == "__main__":
-    zoe = Zoe().dataframe()
-    deaths = Deaths().dataframe()
-    healthcare = Healthcare()
-    admissions = healthcare.metric("admissions")
-    inpatients = healthcare.metric("inpatients")
-    cases = Cases()
-    o60 = cases.metric("o60")
-    cases = cases.metric("all_ages")
 
-    # regions is the list of regions we want charts for
-    regions_to_use = list(admissions.columns.unique())
-    # hack to make England first
-    regions_to_use.insert(
-        0, regions_to_use.pop(regions_to_use.index("England"))
-    )
-
-    aggreg_df = aggregate_dataframes(
-        {
-            "Zoe new infections": zoe,
-            "Admissions": admissions,
-            "Inpatients": inpatients,
-            "Cases >60": o60,
-            "Cases": cases,
-            "Deaths": deaths,
-        }
-    )
-    # uncomment if you want to save a csv table of all datasets
-    # aggreg_df.to_csv('melted.csv')
+    aggreg_df, regions_to_use = make_default_dataframes()
 
     individual_charts(aggreg_df, regions_to_use)
     dashboard(aggreg_df, regions_to_use)
