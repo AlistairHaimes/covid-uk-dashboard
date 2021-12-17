@@ -37,7 +37,7 @@ def format_ax(ax: plt.subplot, region: str, lgnd_labels: list) -> plt.subplot:
     if region == "England":
         ax.set_ylim(bottom=1)
     else:
-        ax.set_ylim(bottom=1, top=20000)
+        ax.set_ylim(bottom=1, top=30000)
     ax.yaxis.tick_right()
     ax.yaxis.set_label_text(label="")
     ax.yaxis.set_major_formatter(mpl.ticker.StrMethodFormatter("{x:,.0f}"))

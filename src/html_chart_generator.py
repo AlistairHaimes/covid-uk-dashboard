@@ -58,13 +58,13 @@ for region in regions_to_use:
         "brown",
     ]
     assert len(variable_list) == len(color_list)
-    
+
     scale = alt.Scale(domain=variable_list, range=color_list)
     color = alt.Color(
         "variable:N",
         scale=scale,
     )
-    
+
     brush = alt.selection_interval(encodings=["x"], name="sel")
     click = alt.selection_multi(encodings=["color"])
 
@@ -80,7 +80,6 @@ for region in regions_to_use:
                 "value:Q",
                 scale=alt.Scale(
                     type="symlog",
-                    # domain=[1, 20000]
                 ),
                 axis=alt.Axis(
                     tickCount=10,
@@ -106,7 +105,6 @@ for region in regions_to_use:
                 "value:Q",
                 scale=alt.Scale(
                     type="symlog",
-                    # domain=[1, 20000]
                 ),
                 axis=alt.Axis(
                     tickCount=10,
