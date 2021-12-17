@@ -1,7 +1,7 @@
 ## covid-uk-dashboard
 Python3 code to export .pngs for (public) English covid-19 data, national and regional.
 
-![England](example/EnglandKeyData.png)
+![England](example/KeyRegionalData.png)
 
 ```python
 python src/covid_chart_generator.py
