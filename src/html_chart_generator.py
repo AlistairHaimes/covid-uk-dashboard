@@ -37,7 +37,7 @@ for region in regions_to_use:
         .melt(id_vars=["date"])
     )
     source_average = (
-        to_plot.rolling(window=7)
+        to_plot.rolling(window=7, center=True)
         .mean()[~(to_plot.index < START)]
         .swaplevel(axis=1)[region]
         .reset_index()

@@ -159,6 +159,11 @@ class Healthcare(ProcessedData, GovCall):
     def __init__(self):
         # so I don't hit the db repeatedly
         self._dataframe = self.dataframe()
+        # new - tidy up
+        self._default_area_query = {
+            "england": ["areaType=nation", "areaName=England"],
+            "regions": ["areaType=nhsRegion"],
+        }
 
     def metric(self, metric: str) -> pd.DataFrame:
         """Choose from `admissions`, `inpatients` or `icu`"""

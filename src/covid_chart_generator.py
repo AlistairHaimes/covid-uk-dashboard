@@ -32,7 +32,7 @@ mpl.use("Agg")  # so can save without displaying
 def individual_charts(to_plot, regions):
     for region in regions:
         print(f"making chart for {region}")
-        fig, ax = plt.subplots(figsize=(12, 7), dpi=300)
+        fig, ax = plt.subplots(figsize=(14, 6), dpi=300)
         line(
             data=to_plot[~(to_plot.index < START)]
             .swaplevel(axis=1)[region]
@@ -42,7 +42,7 @@ def individual_charts(to_plot, regions):
             linewidth=0.5,
         )
         line(
-            data=to_plot.rolling(window=7)
+            data=to_plot.rolling(window=7, center=True)
             .mean()[~(to_plot.index < START)]
             .swaplevel(axis=1)[region]
             .reset_index()
@@ -79,7 +79,7 @@ def dashboard(to_plot, regions):
             linewidth=0.15,
         )
         line(
-            data=to_plot.rolling(window=7)
+            data=to_plot.rolling(window=7, center=True)
             .mean()[~(to_plot.index < START)]
             .swaplevel(axis=1)[region]
             .reset_index()
