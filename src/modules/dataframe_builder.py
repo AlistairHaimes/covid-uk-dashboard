@@ -301,6 +301,7 @@ def make_default_dataframes():
     healthcare = Healthcare()
     admissions = healthcare.metric("admissions")
     inpatients = healthcare.metric("inpatients")
+    icu = healthcare.metric("icu")
     cases = Cases()
     o60 = cases.metric("o60")
     cases = cases.metric("all_ages")
@@ -320,6 +321,7 @@ def make_default_dataframes():
             "Cases >60": o60,
             "Cases": cases,
             "Deaths": deaths,
+            "MechVent inpatients": icu,
         }
     )
     return aggreg_df, regions_to_use

@@ -87,9 +87,11 @@ def dashboard(to_plot, regions):
             ax=ax,
             linewidth=1.0,
         )
+        ax.tick_params(which='major', labelsize="x-small")
+        ax.tick_params(which='minor', labelsize="xx-small")
         ax = format_ax(ax, region, list(to_plot.columns.droplevel(1).unique()))
         ax.set_title(label=region, fontsize="small", fontweight="semibold")
-        ax.tick_params(labelsize="xx-small")
+        
     f.suptitle(
         "England: Covid-19 key data by region, log scale.", fontweight="bold"
     )

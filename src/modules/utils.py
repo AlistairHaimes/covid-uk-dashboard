@@ -5,7 +5,7 @@ Utils to aggregate dataframes into a single dataframe and chart-related
 """
 import pandas as pd
 import matplotlib as mpl  # for formatting log y axis
-from matplotlib.dates import MonthLocator  # for formatting x axis
+from matplotlib.dates import YearLocator, MonthLocator  # for formatting x axis
 import matplotlib.dates as mdates  # for formatting x axis
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -38,11 +38,17 @@ def format_ax(ax: plt.subplot, region: str, lgnd_labels: list) -> plt.subplot:
         ax.set_ylim(bottom=1)
     else:
         ax.set_ylim(bottom=1, top=60000)
+    
     ax.yaxis.tick_right()
     ax.yaxis.set_label_text(label="")
     ax.yaxis.set_major_formatter(mpl.ticker.StrMethodFormatter("{x:,.0f}"))
-    ax.xaxis.set_major_locator(MonthLocator())
-    ax.get_xaxis().set_major_formatter(mdates.DateFormatter("%b"))
+    
+    ax.xaxis.set_major_locator(YearLocator(1))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y'))
+
+    ax.xaxis.set_minor_locator(MonthLocator())
+    ax.get_xaxis().set_minor_formatter(mdates.DateFormatter("%b"))
+    
     return ax
 
 
