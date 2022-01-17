@@ -44,8 +44,9 @@ for region in regions_to_use:
         .melt(id_vars=["date"])
     )
 
-    # excluding Inpatients as its not a cumulative figure
+    # excluding ICU and Inpatients as not cumulative figure
     source = source[source.variable != "Inpatients"]
+    source = source[source.variable != "MechVent inpatients"]
 
     y_ticks_logarithmic = [1, 10, 100, 1000, 10000]
 

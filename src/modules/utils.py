@@ -21,7 +21,7 @@ def aggregate_dataframes(datasets: dict) -> pd.DataFrame:
 
 def format_ax(ax: plt.subplot, region: str, lgnd_labels: list) -> plt.subplot:
     """Common formatting for all charts"""
-    y_ticks_logarithmic = [1, 10, 100, 1000, 10000]
+    y_ticks_logarithmic = [1, 10, 100, 1000, 10000, 100000]
     handles, _ = ax.get_legend_handles_labels()
     ax.legend(
         handles=handles,
@@ -38,17 +38,17 @@ def format_ax(ax: plt.subplot, region: str, lgnd_labels: list) -> plt.subplot:
         ax.set_ylim(bottom=1)
     else:
         ax.set_ylim(bottom=1, top=60000)
-    
+
     ax.yaxis.tick_right()
     ax.yaxis.set_label_text(label="")
     ax.yaxis.set_major_formatter(mpl.ticker.StrMethodFormatter("{x:,.0f}"))
-    
+
     ax.xaxis.set_major_locator(YearLocator(1))
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y'))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
 
     ax.xaxis.set_minor_locator(MonthLocator())
     ax.get_xaxis().set_minor_formatter(mdates.DateFormatter("%b"))
-    
+
     return ax
 
 
