@@ -101,22 +101,36 @@ class GovCall:
 
 
 class Deaths(ProcessedData, GovCall):
-    def fetch_raw_data(self):
+    
+    def _fetch_area(self, area_name: str) -> pd.DataFrame:
+        areas = {
+            "england": ["areaType=nation", "areaName=England"],
+            "regions": ["areaType=region"],
+        }
         deaths_query = {
             "date": "date",
             "region": "areaName",
-            "deaths": "newDeaths28DaysByDeathDate",
+            "deaths": "newDeaths28DaysByDeathDate"
         }
-        deaths_df = self.timelogged_call_gov_api(
-            callname="deaths",
-            filters=["areaType=region"],
+        out_df = self.timelogged_call_gov_api(
+            callname=f"deaths ({area_name})",
+            filters=areas[area_name],
             structure=deaths_query,
+        )
+        return out_df
+    
+    def fetch_raw_data(self):
+        deaths_df = pd.concat(
+            [self._fetch_area("regions"), self._fetch_area("england")],
+            join="inner",
+            ignore_index=True,
         )
         deaths_df.date = pd.to_datetime(deaths_df.date)
         return deaths_df
 
     def _process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
         deaths_df = raw_data
+        #england = deaths_df.pivot_table(index="date", columns="region").sum(axis=1)
         midlands = self._concatenate_regions(
             deaths_df,
             input_regions=["East Midlands", "West Midlands"],
@@ -128,9 +142,7 @@ class Deaths(ProcessedData, GovCall):
             output_label="North East and Yorkshire",
         )
         deaths_df = deaths_df.set_index("date").append([ney, midlands])
-        england = deaths_df.groupby("date").sum().reset_index()
-        england["region"] = "England"
-        deaths_df = pd.concat([deaths_df.reset_index(), england])
+        deaths_df = deaths_df.reset_index()
         deaths_df = deaths_df.pivot_table(index="date", columns="region")
         deaths_df.columns = deaths_df.columns.droplevel(0)
         # exclude final 3 days as figures will be updated
@@ -154,7 +166,7 @@ class Deaths(ProcessedData, GovCall):
         out_dataframe["region"] = output_label
         return out_dataframe
 
-
+    
 class Healthcare(ProcessedData, GovCall):
     def __init__(self):
         # so I don't hit the db repeatedly
