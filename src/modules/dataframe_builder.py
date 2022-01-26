@@ -101,7 +101,6 @@ class GovCall:
 
 
 class Deaths(ProcessedData, GovCall):
-    
     def _fetch_area(self, area_name: str) -> pd.DataFrame:
         areas = {
             "england": ["areaType=nation", "areaName=England"],
@@ -110,7 +109,7 @@ class Deaths(ProcessedData, GovCall):
         deaths_query = {
             "date": "date",
             "region": "areaName",
-            "deaths": "newDeaths28DaysByDeathDate"
+            "deaths": "newDailyNsoDeathsByDeathDate",
         }
         out_df = self.timelogged_call_gov_api(
             callname=f"deaths ({area_name})",
@@ -118,7 +117,7 @@ class Deaths(ProcessedData, GovCall):
             structure=deaths_query,
         )
         return out_df
-    
+
     def fetch_raw_data(self):
         deaths_df = pd.concat(
             [self._fetch_area("regions"), self._fetch_area("england")],
@@ -130,7 +129,7 @@ class Deaths(ProcessedData, GovCall):
 
     def _process_data(self, raw_data: pd.DataFrame) -> pd.DataFrame:
         deaths_df = raw_data
-        #england = deaths_df.pivot_table(index="date", columns="region").sum(axis=1)
+        # england = deaths_df.pivot_table(index="date", columns="region").sum(axis=1)
         midlands = self._concatenate_regions(
             deaths_df,
             input_regions=["East Midlands", "West Midlands"],
@@ -166,7 +165,7 @@ class Deaths(ProcessedData, GovCall):
         out_dataframe["region"] = output_label
         return out_dataframe
 
-    
+
 class Healthcare(ProcessedData, GovCall):
     def __init__(self):
         # so I don't hit the db repeatedly
@@ -332,7 +331,7 @@ def make_default_dataframes():
             "Inpatients": inpatients,
             "Cases >60": o60,
             "Cases": cases,
-            "Deaths": deaths,
+            "Deaths (ONS)": deaths,
             "MechVent inpatients": icu,
         }
     )
